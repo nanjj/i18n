@@ -1,0 +1,12 @@
+# English translations.
+msgid ""
+msgstr ""
+
+msgid "Hello"
+msgstr "Hello"
+
+msgid "World"
+msgstr "World"
+
+msgid "Goodbye"
+msgstr "Goodbye"

@@ -1,0 +1,9 @@
+# German translations — empty msgstr means "untranslated".
+msgid ""
+msgstr ""
+
+msgid "Hello"
+msgstr ""
+
+msgid "World"
+msgstr "Welt"

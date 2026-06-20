@@ -1,0 +1,9 @@
+# Chinese translations.
+msgid ""
+msgstr ""
+
+msgid "Hello"
+msgstr "你好"
+
+msgid "World"
+msgstr "世界"
