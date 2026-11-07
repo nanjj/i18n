@@ -31,9 +31,8 @@ type Locales struct {
 	// sentinel is the locale where msgstr == msgid (e.g. "en_US").
 	sentinel string
 
-	translations  map[string]map[string]string
-	detectedLang  string
-	loadedLocales map[string]bool
+	translations map[string]map[string]string
+	detectedLang string
 }
 
 // Option configures a Locales.
@@ -88,12 +87,11 @@ func WithSentinel(locale string) Option {
 //	loc := i18n.New(localesFS, i18n.WithPOFile("app.po"))
 func New(fsys fs.FS, opts ...Option) *Locales {
 	l := &Locales{
-		fsys:          fsys,
-		dir:           "locales",
-		poFile:        "messages.po",
-		sentinel:      "en_US",
-		translations:  make(map[string]map[string]string),
-		loadedLocales: make(map[string]bool),
+		fsys:         fsys,
+		dir:          "locales",
+		poFile:       "messages.po",
+		sentinel:     "en_US",
+		translations: make(map[string]map[string]string),
 	}
 	for _, opt := range opts {
 		opt(l)
@@ -125,9 +123,7 @@ func (l *Locales) loadAllTranslations() {
 			continue
 		}
 
-		table := parsePO(string(data))
-		l.translations[lang] = table
-		l.loadedLocales[lang] = len(table) > 0
+		l.translations[lang] = parsePO(string(data))
 	}
 }
 
@@ -229,9 +225,10 @@ func parsePO(data string) map[string]string {
 // unescapePO handles C-style escape sequences in PO strings.
 //
 // Must handle \\ before \" and \n to avoid double-unescaping:
-//   \\  →  literal backslash
-//   \"  →  literal double-quote
-//   \n  →  newline
+//
+//	\\  →  literal backslash
+//	\"  →  literal double-quote
+//	\n  →  newline
 func unescapePO(s string) string {
 	s = strings.ReplaceAll(s, `\\`, "\x00")
 	s = strings.ReplaceAll(s, `\"`, `"`)
@@ -242,40 +239,43 @@ func unescapePO(s string) string {
 
 // G returns the translation of msgid for the current locale.
 //
-// If the current locale has a .po file but the msgid is missing, it panics
-// to alert the developer that a translation entry is missing.
+// Lookup order matches gettext: the current locale, then a shorter language
+// code (zh_CN → zh), then the msgid itself. A msgid that is absent from the
+// table, or present with an empty msgstr, is untranslated and yields the
+// msgid unchanged. Missing entries never panic: a runtime that dies because a
+// .po file lags one commit behind the source is worse than an untranslated
+// string, and gettext has always behaved the other way.
 //
-// If the current locale has no .po file, it falls back to the msgid itself.
+// Use "slingshot i18n verify" to catch missing entries at build time, where
+// a failure costs a CI run rather than a user's session.
 func (l *Locales) G(msgid string) string {
-	if table, ok := l.translations[l.detectedLang]; ok {
-		if translated, ok := table[msgid]; ok {
-			if translated != "" {
-				return translated
-			}
-			// Found but empty string → untranslated, tolerate, fallback to msgid.
-		} else {
-			// Key not in table → developer forgot to add .po entry.
-			panic(fmt.Sprintf("i18n: missing translation for %q in locale %s", msgid, l.detectedLang))
-		}
-	} else if l.loadedLocales[l.detectedLang] {
-		// .po file exists but parsed as empty table, and msgid is missing.
-		panic(fmt.Sprintf("i18n: missing translation for %q in locale %s (empty table)", msgid, l.detectedLang))
+	if translated, ok := l.lookup(l.detectedLang, msgid); ok {
+		return translated
 	}
 
 	// Try falling back to a shorter language code (e.g. "zh" from "zh_CN").
 	if idx := strings.IndexByte(l.detectedLang, '_'); idx >= 0 {
-		shortLang := l.detectedLang[:idx]
-		if table, ok := l.translations[shortLang]; ok {
-			if translated, ok := table[msgid]; ok {
-				if translated != "" {
-					return translated
-				}
-			}
-			// Don't panic for short-code fallback — it might be a secondary table.
+		if translated, ok := l.lookup(l.detectedLang[:idx], msgid); ok {
+			return translated
 		}
 	}
 
 	return msgid
+}
+
+// lookup returns the non-empty translation of msgid in locale, if any.
+func (l *Locales) lookup(locale, msgid string) (string, bool) {
+	table, ok := l.translations[locale]
+	if !ok {
+		return "", false
+	}
+
+	translated, ok := table[msgid]
+	if !ok || translated == "" {
+		return "", false
+	}
+
+	return translated, true
 }
 
 // SetLocale forces a specific locale. Useful for testing.

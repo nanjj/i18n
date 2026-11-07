@@ -49,17 +49,29 @@ func TestG_FallbacksToMsgid(t *testing.T) {
 	}
 }
 
-func TestG_MissingKeyPanics(t *testing.T) {
+func TestG_MissingKeyFallsBackToMsgid(t *testing.T) {
 	loc := New(os.DirFS("testdata"))
 	loc.SetLocale("zh_CN")
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic for missing translation")
-		}
-	}()
+	// zh_CN has no "Goodbye" entry. gettext semantics: return the msgid.
+	if got := loc.G("Goodbye"); got != "Goodbye" {
+		t.Fatalf("G('Goodbye') = %q, want 'Goodbye' (fallback to msgid)", got)
+	}
+}
 
-	loc.G("Goodbye") // zh_CN has no "Goodbye" entry
+func TestG_EmptyTableFallsBackToMsgid(t *testing.T) {
+	fsys := fstest.MapFS{
+		"locales/zh_CN/messages.po": &fstest.MapFile{
+			Data: []byte("# header only\n"),
+		},
+	}
+
+	loc := New(fsys)
+	loc.SetLocale("zh_CN")
+
+	if got := loc.G("Hello"); got != "Hello" {
+		t.Fatalf("G('Hello') = %q, want 'Hello' (fallback to msgid)", got)
+	}
 }
 
 func TestG_NoPOFileForLocale(t *testing.T) {
